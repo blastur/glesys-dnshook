@@ -295,7 +295,7 @@ def main():
         log.debug("Calling hook %s with args %s", hook, args)
         hooks[hook](gsys, cfg, args)
     else:
-        die('unknown hook %s' % hook)
+        log.debug('ignoring unknown hook %s' % hook)
 
 if __name__ == '__main__':
     main()
