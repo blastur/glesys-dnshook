@@ -1,8 +1,10 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import sys
-import urllib
-import urllib2
+import urllib.request
+import urllib.parse
+import urllib.error
+import codecs
 import json
 import os
 import logging
@@ -18,11 +20,11 @@ class GleSYSResponse(object):
     def __init__(self, raw_response):
         root = json.loads(raw_response)
 
-        if not 'response' in root:
+        if 'response' not in root:
             raise ValueError('Malformed GleSYS request (response missing)')
 
         response = root['response']
-        if not 'status' in response:
+        if 'status' not in response:
             raise ValueError('Malformed GleSYS request (status missing)')
 
         self.response = response
@@ -62,13 +64,10 @@ class GleSYS(object):
 
         Returns a GleSYSResponse object.'''
 
-        auth = ("%s:%s" % (self.username, self.key))
-
-        headers = {
-            'Authorization': "Basic %s" % auth.encode("base64").replace('\n', '')
-        }
-
-        url = self.apiurl + "/" + module + "/" + function
+        pwdmgr = urllib.request.HTTPPasswordMgrWithDefaultRealm()
+        pwdmgr.add_password(None, self.apiurl, self.username, self.key)
+        handler = urllib.request.HTTPBasicAuthHandler(pwdmgr)
+        opener = urllib.request.build_opener(handler)
 
         # Force JSON output (regardless of passed arguments)
         if arguments:
@@ -76,11 +75,11 @@ class GleSYS(object):
         else:
             arguments = {'format': 'json'}
 
-        req = urllib2.Request(url, urllib.urlencode(arguments), headers)
+        data = urllib.parse.urlencode(arguments).encode("utf-8")
         try:
-            response = urllib2.urlopen(req)
-            return GleSYSResponse(response.read())
-        except urllib2.HTTPError as exc:
+            resp = opener.open(f"{self.apiurl}/{module}/{function}", data=data)
+            return GleSYSResponse(resp.read())
+        except urllib.error.HTTPError as exc:
             return GleSYSResponse(exc.read())
 
 
@@ -102,7 +101,8 @@ def dig_txt_record(server, record):
     try:
         digcmd = ['dig', '@' + server, '-t', 'TXT', record, '+short']
         log.debug(str(digcmd))
-        process = subprocess.Popen(digcmd, stdout=subprocess.PIPE)
+        process = subprocess.Popen(digcmd, stdout=subprocess.PIPE,
+                                   encoding='utf-8')
     except OSError as exc:
         if exc.errno == errno.ENOENT:
             die("error: dig not found in PATH")
@@ -114,10 +114,15 @@ def dig_txt_record(server, record):
     if process.returncode != 0:
         log.debug('failed to lookup TXT-record using dig (%d)',
                   process.returncode)
-        raise RuntimeError('dig lookup failed (%d)' % process.returncode)
+        raise RuntimeError(f'dig lookup failed ({process.returncode})')
 
     if len(stdout) > 0:
-        return stdout.strip('"\r\n')
+        records = stdout.splitlines()
+        if records:
+            log.debug(records)
+            return records[0].strip('"')
+        else:
+            return None
     else:
         return None
 
@@ -155,7 +160,7 @@ def do_deploy_challenge(gsys, cfg, args):
     (fqdn, _, expected_token) = args
     (_, domain) = fqdn2domain(fqdn)
 
-    txt_record = '_acme-challenge.%s.' % fqdn
+    txt_record = f'_acme-challenge.{fqdn}.'
 
     log.debug("Challenge FQDN %s, domain %s, expected_token %s, txtrec %s",
               fqdn, domain, expected_token, txt_record)
@@ -171,7 +176,7 @@ def do_deploy_challenge(gsys, cfg, args):
 
     if not response.is_ok():
         (errcode, errmsg) = response.status
-        die('error: deploy_challenge failed (%d, %s)' % (errcode, errmsg))
+        die(f'error: deploy_challenge failed ({errcode}, {errmsg})')
     else:
         if cfg['dns']:
             actual_token = has_txt_record_propagated(cfg['dns'],
@@ -190,8 +195,8 @@ def do_deploy_challenge(gsys, cfg, args):
 def do_clean_challenge(gsys, cfg, args):
     ''' Clean ACME challenge
 
-    Removes the TXT DNS record(s) created by do_deploy_challenge. This hook gets
-    called regardless if challenge was solved successfully or not.
+    Removes the TXT DNS record(s) created by do_deploy_challenge. This hook
+    gets called regardless if challenge was solved successfully or not.
     '''
     if len(args) != 3:
         die('error: missing args (<domain> <token_filename> <token>)')
@@ -207,9 +212,9 @@ def do_clean_challenge(gsys, cfg, args):
 
     if not response.is_ok():
         (errcode, errmsg) = response.status
-        die('error: clean_challenge failed (%d, %s)' % (errcode, errmsg))
+        die(f'error: clean_challenge failed ({errcode}, {errmsg})')
 
-    recordname = '_acme-challenge.%s.' % fqdn
+    recordname = f'_acme-challenge.{fqdn}.'
 
     cleaned = 0
     for record in response['records']:
@@ -223,13 +228,10 @@ def do_clean_challenge(gsys, cfg, args):
                 cleaned += 1
             else:
                 (errcode, errmsg) = response.status
-                die("error: failed to clean %s (id %d): %s (%d)" % (recordname,
-                                                                    record['recordid'],
-                                                                    errmsg,
-                                                                    errcode))
+                die(f"error: clean {recordname}: {errmsg} ({errcode})")
 
     if cleaned == 0:
-        die('The record %s does not exist and cannot be cleaned.' % recordname)
+        die(f'The record {recordname} does not exist and cannot be cleaned.')
 
 
 def do_nothing(gsys, cfg, args):
@@ -242,14 +244,16 @@ def die(errmsg):
     sys.stderr.write(errmsg + '\n')
     sys.exit(1)
 
+
 def usage(hooks):
     ''' Print hook usage help and exits '''
     errmsg = 'usage: %s <hook> <args>\n\n(hook can be any of %s)'
-    die(errmsg % (__file__, hooks.keys()))
+    die(errmsg % (__file__, list(hooks.keys())))
 
 
 def main():
     ''' Entrypoint '''
+
     if 'GLESYS_USER' not in os.environ:
         die('error: GLESYS_USER is not in your environment.')
     if 'GLESYS_KEY' not in os.environ:
@@ -295,7 +299,8 @@ def main():
         log.debug("Calling hook %s with args %s", hook, args)
         hooks[hook](gsys, cfg, args)
     else:
-        log.debug('ignoring unknown hook %s' % hook)
+        log.debug('ignoring unknown hook %s', hook)
+
 
 if __name__ == '__main__':
     main()

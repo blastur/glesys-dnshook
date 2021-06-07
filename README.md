@@ -5,7 +5,7 @@ This is a hook for the [Let's Encrypt](https://letsencrypt.org/) ACME client
 `letsencrypt.sh`) that allows you to use [GleSYS](https://www.glesys.com/) DNS
 records to respond to `dns-01` challenges.
 
-The hook requires Python, a GleSYS account and an API key.
+The hook requires Python 3.x, a GleSYS account and an API key.
 
 ## Installation
 
