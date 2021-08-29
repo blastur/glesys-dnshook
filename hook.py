@@ -275,7 +275,7 @@ def main():
         cfg['dns'] = os.environ['GLESYS_DNS_SERVER']
 
     if 'GLESYS_PROPAGATION_TIMEOUT' in os.environ:
-        cfg['tmo'] = os.environ['GLESYS_PROPAGATION_TIMEOUT']
+        cfg['tmo'] = float(os.environ['GLESYS_PROPAGATION_TIMEOUT'])
 
     hooks = {
         'deploy_challenge': do_deploy_challenge,
