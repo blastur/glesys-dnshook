@@ -68,8 +68,8 @@ example:
 
 ## Advanced configuration
 
-By default, Google DNS serves (8.8.8.8) are used to verify DNS propagation. This
-is the same servers used by LetsEncrypt to verify the challenge. If you still
+By default, Glesys DNS serves (ns1.namesystem.se) are used to verify DNS propagation.
+This is the same servers used by LetsEncrypt to verify the challenge. If you still
 wish to change the verification DNS, you may set the GLESYS_DNS_SERVER
 environment variable:
 

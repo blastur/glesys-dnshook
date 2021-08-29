@@ -268,7 +268,7 @@ def main():
 
     cfg = {
         'tmo': 300,
-        'dns': '8.8.8.8'
+        'dns': 'ns1.namesystem.se'
     }
 
     if 'GLESYS_DNS_SERVER' in os.environ:
